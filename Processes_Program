@@ -1,0 +1,62 @@
+#include <iostream>
+#include <windows.h>
+#include <random>
+#include <thread>
+using namespace std;
+
+#define MEMORY_SIZE sizeof(int) + sizeof(bool)
+
+void flipCoinAndWrite(LPVOID pBuf, HANDLE hSemaphore, bool isProcessA) {
+    int* number = static_cast<int*>(pBuf);
+    bool* turn = reinterpret_cast<bool*>(static_cast<char*>(pBuf) + sizeof(int));
+
+    random_device rd;
+    mt19937 gen(rd());
+    uniform_int_distribution<int> dist(1, 2);
+
+    while (true) {
+        WaitForSingleObject(hSemaphore, INFINITE);
+
+        if (*number > 1000) {
+            ReleaseSemaphore(hSemaphore, 1, nullptr);
+            break;
+        }
+
+        if (*turn == isProcessA) {
+            int coin = dist(gen);
+            cout << "Process " << (isProcessA ? "A" : "B") << " writes: " << *number << endl;
+
+            (*number)++;
+            *turn = (coin == 2) ? isProcessA : !isProcessA;
+           
+        }
+
+        ReleaseSemaphore(hSemaphore, 1, nullptr);
+        this_thread::sleep_for(chrono::milliseconds(10));
+    }
+}
+
+int main() {
+ 
+    char sharedMemory[MEMORY_SIZE] = {};
+    LPVOID pBuf = static_cast<LPVOID>(sharedMemory);
+
+    int* number = static_cast<int*>(pBuf);
+    bool* turn = reinterpret_cast<bool*>(static_cast<char*>(pBuf) + sizeof(int));
+ 
+    *number = 1;
+    *turn = true; 
+
+   
+    HANDLE hSemaphore = CreateSemaphore(nullptr, 1, 1, nullptr);
+    
+    thread processA(flipCoinAndWrite, pBuf, hSemaphore, true);
+    thread processB(flipCoinAndWrite, pBuf, hSemaphore, false);
+
+    processA.join();
+    processB.join();
+
+    CloseHandle(hSemaphore);
+
+    return 0;
+}
